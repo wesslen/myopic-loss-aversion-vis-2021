@@ -1,0 +1,184 @@
+---
+title: "01-simulated-returns"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Load data
+
+```{r}
+library(tidyverse)
+library(ggdist)
+
+file_url = "https://raw.githubusercontent.com/wesslen/financial-decisions/master/public/returns.csv"
+
+returns <- read_csv(file_url) %>%
+  select(Year, equities_sp, treasury_10yr) %>%
+  gather(key = "Fund", value = "Returns", -Year) %>%
+  mutate(Fund = ifelse(Fund=="equities_sp",
+                       "Stocks",
+                       "Bonds"))
+```
+
+```{r}
+# correlation
+cor(returns$Returns[returns$Fund=="Stocks"],returns$Returns[returns$Fund=="Bonds"])
+
+set.seed(123)
+
+# raw data
+returns %>%
+  ggplot(aes(x = Returns, color = Fund, fill = Fund)) +
+  ggdist::geom_dots() +
+  facet_grid(Fund~.) +
+  cowplot::theme_minimal_vgrid()
+```
+
+## Bootstrapping
+
+```{r}
+#library(rsample)
+
+file_url = "https://raw.githubusercontent.com/wesslen/financial-decisions/master/public/returns.csv"
+
+raw_df <- read_csv(file_url) %>%
+  select(-treasury_3mo) %>%
+  rename(Stocks = equities_sp,
+         Bonds = treasury_10yr)
+
+getBootstrap <- function(df, num_year_sim = 30){
+  samp1 <- df %>%
+    sample_n(size = num_year_sim, replace = TRUE) %>%
+    mutate(Stocks = Stocks + 1, Bonds = Bonds + 1) 
+  
+  # get geometric means (annualize 30 year returns)
+  stocks = (prod(samp1$Stocks) ^ (1 / num_year_sim)) - 1
+  bonds = (prod(samp1$Bonds) ^ (1 / num_year_sim)) - 1
+  
+  return_df <- data.frame(stocks = stocks, bonds = bonds)
+  
+  return(return_df)
+}
+
+# get 10,000 bootstraps
+boot_samples <- 10000 %>% 
+  rerun(getBootstrap(raw_df))%>%
+  map_df(bind_rows)
+
+head(boot_samples)
+```
+
+```{r}
+getExpectedReturns <- function(stocks){
+  r = boot_samples$stocks * stocks + boot_samples$bonds * (1 - stocks)
+  return(r)
+}
+
+# stock_grid %>%
+#   purrr::map(getExpectedReturns) %>%
+#   purrr::map()
+# 
+# stock_grid <- seq(0,1,0.01)
+
+returns_df = tibble(
+  expReturns = numeric(),
+  stockAllocation = numeric()
+)
+
+for (j in seq(0, 1, by = 0.01)){
+  Apct = j 
+  Bpct = 1 - Apct
+  
+  expReturns = boot_samples$stocks * Apct + boot_samples$bonds * Bpct
+
+  expReturns_df <- tibble("expReturns" = expReturns, "stockAllocation" = Apct)
+  returns_df <- dplyr::bind_rows(returns_df,expReturns_df)
+  
+}
+
+head(returns_df)
+```
+
+
+## Visualizations
+
+```{r}
+library(tidyverse)
+library(ggridges)
+
+returns_df %>%
+  mutate(stockAllocation = factor(stockAllocation)) %>%
+  filter(stockAllocation %in% as.character(seq(0,1,0.1))) %>%
+  ggplot(aes(x = expReturns, y = stockAllocation)) +
+  ggridges::geom_density_ridges(quantile_lines = TRUE)
+```
+
+
+```{r}
+gfont <-   theme(
+  text = element_text(size=8), 
+  axis.text.x = element_text(size=8),
+  axis.text.y = element_text(size=8)
+) 
+
+returns_df %>%
+  mutate(stockAllocation = factor(stockAllocation)) %>%
+  filter(stockAllocation %in% as.character(seq(0,1,0.1))) %>%
+  ggplot(aes(x = expReturns, y = stockAllocation)) +
+  stat_pointinterval() + 
+  labs(subtitle = "Point Interval", y = " ", x = "Annualized Returns") +
+  cowplot::theme_minimal_vgrid() +
+  #scale_x_continuous(labels = scales::percent) + 
+  gfont +
+  #scale_color_manual(values=c("#E69F00", "#999999")) +
+  theme(legend.position = "none")
+```
+
+## Save simulated returns
+
+File will use Plumber/Docker on heroku app to create API that react.js app will call for debrief / incentives.
+
+```{r}
+returns_df %>%
+  mutate(stockAllocation = stockAllocation * 100) %>%
+  mutate(percrank = percent_rank(expReturns)) %>%
+  mutate(
+    percrank=round(percrank, 4),
+    expReturns=round(expReturns, 4)
+  ) %>%
+  feather::write_feather("data/simulated-returns.feather")
+```
+
+Save file that will be way to convert stock allocation to DV for RQ2 and RQ3 (expected return / optimal return).
+
+```{r}
+ret_df <- returns_df %>%
+  group_by(stockAllocation = factor(stockAllocation)) %>%
+  summarise(ExpReturn=mean(expReturns))
+
+max_ret = max(ret_df$ExpReturn)
+
+ret_df <- ret_df %>%
+  mutate(dv = ExpReturn / max_ret) 
+
+ret_df$dv[ret_df$stockAllocation=="100"] <- max_ret / (.0001 + max_ret)
+
+ret_df %>%
+  mutate(stockAllocation = as.numeric(stockAllocation)) %>%
+  ggplot(aes(x = stockAllocation, y = dv)) +
+  geom_line()
+
+ret_df %>%
+  write_csv("data/dv-returns.csv")
+```
+
+```{r}
+ret2_df <- ret_df %>%
+  mutate(stockAllocation = as.numeric(stockAllocation))
+
+lm(dv ~ stockAllocation, data = ret2_df)
+```
+

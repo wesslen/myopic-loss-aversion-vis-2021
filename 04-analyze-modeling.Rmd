@@ -1,0 +1,619 @@
+---
+title: "04-analyze-modeling"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## R Markdown
+
+```{r}
+library(brms)
+library(rstan)
+library(tidyverse)
+library(cowplot)
+library(colorblindr)
+library(ggpubr)
+library(tidybayes)
+library(modelr)
+
+# recommended code to speed up stan
+# see https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+max_eval = 30
+
+rq3 <- read_csv("data/rq3.csv") %>%
+    mutate(
+    eval_period_normalized = ((evalPeriod - max_eval) / max_eval) + 0.5
+  )
+```
+
+```{r fig.width=10,fig.height=4}
+rq3 %>%
+  ggplot(aes(x = evalPeriod, y = dv, color = treatment)) +
+  stat_summary(fun.data = mean_se) +
+  geom_hline(yintercept = 1) +
+  stat_smooth(method = lm) +
+  facet_grid(.~treatment) +
+  theme(legend.position = "none")
+```
+
+### Priors
+
+Commented out.
+
+```{r}
+get_prior(bf(
+    dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+    phi ~ eval_period_normalized * treatment
+  ),
+  data = rq3, family = Beta)
+```
+
+
+```{r}
+pr_beta = c(
+  prior(normal(0, 1), class = b),
+  # these prior intercepts are wide and cover 0 (50% on the logit scale), but
+  # also assume some likely better-than-50% performance on average --- this
+  # was chosen to aid convergence during the pilot, but does not have a strong
+  # impact on final estimates.
+  prior(normal(2, 2), class = Intercept),
+  prior(normal(2, 2), class = Intercept, dpar = phi),
+  prior(normal(0, 1), class = b, dpar = phi),
+  prior(student_t(3, 0, 1), class = sd)
+)
+```
+
+### Fit model
+
+Let's fit the model:
+
+```{r, eval = FALSE}
+warmup = 2000
+iter = warmup + 2000
+thin = 2
+mbeta = brm(bf(
+    dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+    phi ~ eval_period_normalized * treatment),
+  data = rq3, 
+  prior = pr_beta, 
+  control = list(adapt_delta = 0.9995, max_treedepth = 15, stepsize = 0.005),
+  warmup = warmup, iter = iter, thin = thin,
+  family = Beta
+  )
+
+# message https://discourse.mc-stan.org/t/dealing-with-catalina/11285/254
+```
+
+
+```{r}
+# pairs(mbeta$fit, pars = c("b_Intercept", "b_trial_normalized", "sd_participant__Intercept",  "sd_participant__trial_normalized", 
+#   "sd_scenario__Intercept",  
+#   "cor_participant__Intercept__trial_normalized", "b_phi_Intercept", "b_phi_trial_normalized"))
+```
+
+```{r run, eval=FALSE, include=TRUE}
+# save model - core model
+   # dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+   #  phi ~ eval_period_normalized * treatment),
+save(mbeta, file = "models/fit1.rda")
+```
+
+
+
+```{r}
+# load model
+load("models/fit1.rda")
+```
+
+```{r}
+summary(mbeta)
+```
+
+```{r}
+treatment_gg <- conditional_effects(mbeta, "treatment") # conditions = data.frame(size = 1)
+
+treatment_gg
+```
+
+
+```{r}
+
+conditional_effects(mbeta) # conditions = data.frame(size = 1)
+
+```
+
+
+```{r}
+plot(mbeta)
+```
+
+```{r}
+#get_variables(mbeta)
+```
+
+```{r}
+pp_check(mbeta)
+#+scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30"))
+```
+
+
+```{r}
+#q75 <- function(y) quantile(y, 0.75)
+#pp_check(mbeta, type='stat', stat='mean')
+#+scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30"))
+```
+
+
+
+```{r}
+bayesplot::pp_check(mbeta, type = "violin_grouped", group = "treatment")
+```
+
+
+```{r}
+bayesplot::pp_check(mbeta, type = "error_hist")
+```
+
+
+## Results
+
+```{r}
+library(tidybayes)
+library(modelr)
+
+pred_beta = 
+  rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = seq_range(eval_period_normalized, n = 20)
+  ) %>%
+  add_predicted_samples(mbeta, re_formula = NULL, allow_new_levels = TRUE) %>%    
+  mean_qi(.prob = c(.95, .8, .5))
+```
+
+
+```{r fig.height = 2, fig.width = 6}
+# shared properties of posterior prediction and fit line plots
+fit_line_plot_settings = list(
+  scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30")),
+  coord_cartesian(expand = FALSE),
+  xlab("Evaluation Period"),
+  theme(
+    panel.grid = element_blank(), panel.spacing.x = unit(5, "points"),
+    strip.background = element_blank(), strip.text = element_text(hjust = 0.5, color = "black"),
+    axis.title.x = element_text(hjust = 0)
+  ))
+
+
+
+vis_display_order <- c("point","barchart","interval","table","hopsdist","dotplot","hops","density")
+labs_vis = c("Point + Interval","Bar Chart","Interval","Table","HOP + Strip","Dot plot","HOP","Probability Density")
+labeller = list(labs_vis)
+
+vis_labels = list(
+  "point"="Point + Interval",
+  "barchart"="Bar Chart",
+  "interval"="Interval",
+  "table"="Table",
+  "hopsdist"="HOP + Strip",
+  "dotplot"="Dot plot",
+  "hops"="HOP",
+  "density"="Prob. Density"
+)
+
+vis_labeller <- function(variable,value){
+  return(vis_labels[value])
+}
+#vnames(labs_vis) = vis_display_order
+
+post_pred_plot = pred_beta %>%
+  ungroup() %>%
+  #mutate(treatment = forcats::fct_relevel(treatment, vis_display_order)) %>%
+  ggplot(aes(x = eval_period_normalized)) +
+  geom_lineribbon(aes(y = pred), data = pred_beta) +
+  geom_line(aes(y = pred), data = pred_beta, color = "red",size = 1) +
+  geom_hline(yintercept = 1) +
+  scale_fill_brewer(guide = guide_legend(reverse = TRUE)) +
+  geom_hline(yintercept = seq(.3, .95, by=.1), color="gray75", alpha = 0.5) +
+  fit_line_plot_settings + 
+  #facet_grid(. ~ treatment, labeller = labeller(treatment = labs_vis)) +
+  facet_grid(. ~ forcats::fct_relevel(treatment, vis_display_order), labeller = vis_labeller) +
+  labs(title = " ", y = "") +
+  geom_point(aes(y = dv), alpha = 0.05, data = rq3) 
+
+post_pred_plot
+```
+
+### code below needs to be modified
+
+Above, the red line is the predicted median, and the blue bands are predictive intervals for the data. We can see that most conditions have a distance between 1 year and 30 year evaluation periods which indicate myopic loss aversion. However, there are some differences, and it is hard to tell how reliable those differences are just by looking at predictions. So, let's look at posteriors for the mean and precision of estimates according to the model.
+
+
+## Model-based myopic loss aversion
+
+First we'll generate samples of fit lines for conditional means and variances. We will use these to plot fit lines and to generate estimates for performance in the 1 and 30 year evaluation periods. These estimates will be for the "average" scenario and "average" person:
+
+
+```{r}
+fit_lines = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = seq_range(eval_period_normalized, n = 20)
+  ) %>%
+  add_fitted_samples(mbeta, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() 
+  #mutate(vis = fct_relevel(vis, vis_display_order))
+```
+
+The estimates of $\phi$ (`phi`, the precision parameter of the beta distribution) are a little hard to interpret, so instead we'll derive a posterior distribution for standard deviation. We can use the fact that the standard deviation $\sigma$ of a Beta distribution is:
+
+$$
+\sigma = \sqrt{\frac{\mu (1 - \mu)}{(1 + \phi)}}
+$$
+
+Thus we can transform samples from the distribution of $\mu$ (`mu`) and $\phi$ (`phi`) into samples from the distribution of $\sigma$ (`sd`):
+
+```{r}
+fit_lines <- fit_lines %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+```
+
+
+### Trends in mean
+
+```{r}
+mu_mean = fit_lines %>%
+  group_by(treatment, eval_period_normalized) %>%
+  summarise(mu_mean=mean(mu))
+```
+
+
+Estimates of the mean for the "average" scenario and "average" person:
+
+```{r, fig.height = 3, fig.width = 8}
+scale_fill_fit_lines = scale_fill_manual(
+  values = RColorBrewer::brewer.pal(4, "Greys")[-1], guide = guide_legend(reverse = TRUE)
+)
+mu_lines_plot = fit_lines %>%
+  ggplot(aes(x = eval_period_normalized, y = mu)) +
+  stat_lineribbon(.prob = c(.95, .8, .5)) +
+  geom_hline(yintercept = seq(.7, 1, by=.05), color="gray75", alpha = 0.5) +
+  geom_line(aes(y = mu_mean), data = mu_mean, color = "red", size = 1) +
+  facet_grid(. ~ forcats::fct_relevel(treatment, vis_display_order), labeller = vis_labeller) +
+  scale_fill_fit_lines +
+  fit_line_plot_settings
+mu_lines_plot
+```
+
+### Trends in standard deviation
+
+```{r}
+sd_mean = fit_lines %>%
+  group_by(treatment, eval_period_normalized) %>%
+  summarise(sd_mean=mean(sd))
+```
+
+Estimates of the standard deviation for the "average" scenario and "average" person:
+
+```{r, fig.height = 3, fig.width = 8}
+fit_line_plot_2 = list(
+  scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30")),
+  coord_cartesian(expand = FALSE),
+  xlab("Evaluation Period"),
+  theme(
+    panel.grid = element_blank(), 
+    panel.spacing.x = unit(5, "points"),
+    strip.background = element_blank(), 
+    strip.text = element_text(hjust = 0.5, color = "black"),
+    axis.title.x = element_text(hjust = 0)
+  ))
+
+
+sd_lines_plot = fit_lines %>%
+  ggplot(aes(x = eval_period_normalized, y = sd)) +
+  stat_lineribbon(.prob = c(.95, .8, .5)) +
+  geom_hline(yintercept = seq(0, .2, by=.05), color="gray75", alpha = 0.5) +
+  geom_line(aes(y = sd_mean), data = sd_mean, color = "red", size = 1) +
+  facet_grid(. ~ forcats::fct_relevel(treatment, vis_display_order), labeller = vis_labeller) +
+  scale_fill_fit_lines +
+  fit_line_plot_2
+sd_lines_plot
+```
+
+
+
+## Convert DV to Dollar for hypothetical situation
+
+```{r}
+dv_returns <- read_csv("data/dv-returns.csv")
+```
+
+```{r}
+optimal_expreturn <- max(dv_returns$ExpReturn)
+```
+
+```{r}
+getExpectedInvestment <- function(dv, investment, optimal_expreturn){
+  return = dv * optimal_expreturn
+  scales::dollar(investment * ((1 + return) ^ 30))
+}
+
+# 35 year old with $50,000 investment for different dv's
+dollarValue = getExpectedInvestment(seq(0.4,1,0.2),50000, optimal_expreturn)
+```
+
+## Final figure
+
+```{r, fig.width = 8, fig.height = 8, include = FALSE}
+# generate combined plot as a PDF (this is for the paper, don't include in md output)
+#dollarValue1 = getExpectedInvestment(seq(0.4,1,0.2),50000)
+
+lines_plots = plot_grid(
+  post_pred_plot +
+    xlab(NULL) +
+    ylab("\n\n") +
+    cowplot::theme_minimal_hgrid() +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = seq(.3, 1.0, by = .1), labels = scales::number_format(accuracy = 0.01)) + 
+    #  labels = formatC(seq(.3, 1.0, by = .1), format = "f", digits = 2)) +
+    #scale_y_continuous(breaks = seq(0.4,1,0.2), labels = getExpectedInvestment(seq(0.4,1,0.2),50000, optimal_expreturn)) +
+    theme(
+      panel.border = element_rect(color = "gray75", fill = NA),
+       plot.background = element_rect(fill = 'white', color = 'white'),
+      axis.text.x = element_text(size=8),
+      axis.text.y = element_text(size=10),
+      strip.text.x = element_text(size = 8),
+      axis.title.y = element_text(size=12)
+    ) ,
+  mu_lines_plot +
+    xlab(NULL)+
+        cowplot::theme_minimal_hgrid() +
+    ylab("\n\n")+
+    theme(
+      #strip.background = element_blank(), 
+      #strip.text = element_blank(),
+      strip.text.x = element_text(size = 8),
+       plot.background = element_rect(fill = 'white', color = 'white'),
+      axis.text.y = element_text(size=10),
+      axis.text.x = element_text(size=8),
+      axis.title.y = element_text(size=12)
+    ) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = seq(.7, 1.0, by = .1), labels = scales::number_format(accuracy = 0.01)) +
+    #  labels = formatC(seq(.7, 1.0, by = .1), format = "f", digits = 2)) +
+    #scale_y_continuous(breaks = seq(0.7,1,0.1), labels = getExpectedInvestment(seq(0.7,1,0.1),50000, optimal_expreturn))+
+    theme(panel.border = element_rect(color = "gray75", fill = NA)),
+  sd_lines_plot +
+    ylab("\n\n")+
+        cowplot::theme_minimal_hgrid() +
+    #scale_y_continuous(breaks = seq(0,.15,0.05))+
+    theme(#strip.background = element_blank(), 
+      #strip.text = element_blank(),
+      strip.text.x = element_text(size = 8)) +
+    theme(
+      panel.border = element_rect(color = "gray75", fill = NA),
+       plot.background = element_rect(fill = 'white', color = 'white'),
+      axis.text.y = element_text(size=10),
+      axis.text.x = element_text(size=8),
+      axis.title.y = element_text(size=12)
+       #plot.margin = margin(0, 0, 0, 0, "cm"),
+      ),
+  align = "h",
+  ncol = 1,
+  axis = "l"
+)
+
+
+lines_plots
+pdf(file = "img/rq/lines_plots.pdf", useDingbats = FALSE, width = 10, height = 8)
+lines_plots
+dev.off()
+```
+
+### compare 1 vs 30
+
+
+## Performance on last trial
+
+1 year and 30 year evaluation periods.
+
+```{r}
+eval_period_ends = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = c(-0.467, .5) #c(-0.467, .5)  # because we normalized trial to be from -0.5 to 0.5
+  ) %>%
+  add_fitted_samples(mbeta, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() %>%
+  mutate(treatment = fct_rev(fct_relevel(treatment, vis_display_order))) %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+```
+
+### Mean
+
+Conditional means (for "average" person on "average" scenario) on last trial:
+
+```{r}
+plot_means = eval_period_ends %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"30","1")) %>%
+  mutate(evalPeriod = factor(evalPeriod, levels = c("30","1"))) %>%
+  ggplot(aes(y = treatment, x = mu, group = evalPeriod, fill = evalPeriod)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 0.8) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black") +
+  cowplot::theme_minimal_vgrid()
+  #coord_cartesian(xlim = c(0.85, 1.0), ylim = c(1, 10.5)) 
+plot_means %>%
+  ggsave(filename = "img/rq/rq4-mu.png",
+         height = 5,
+         width = 6)
+
+plot_means
+```
+
+
+### Mean differences
+
+Mean differences by evaluation periods
+
+```{r}
+mean_diff = eval_period_ends %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"ep30","ep1")) %>%
+  mutate(evalPeriod = factor(evalPeriod, levels = c("ep30","ep1"))) %>%
+  mutate(evalPeriod = fct_relevel(evalPeriod, "ep1")) %>%
+  select(treatment, mu, evalPeriod, .iteration) %>%
+  pivot_wider(
+    names_from = evalPeriod,
+    values_from = mu
+  ) %>%
+  mutate(mu_diff = ep30 - ep1) %>%
+  ggplot(aes(y = treatment, x = mu_diff)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 0.8) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  cowplot::theme_minimal_vgrid() +
+  xlim(-.25,.25)
+  #coord_cartesian(xlim = c(0.85, 1.0), ylim = c(1, 10.5)) 
+
+mean_diff
+```
+
+
+### Standard deviation
+
+Conditional standard deviation (for "average" person on "average" scenario) on last trial:
+
+```{r}
+plot_sd = eval_period_ends %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"30","1")) %>%
+    mutate(evalPeriod = factor(evalPeriod, levels = c("30","1"))) %>%
+  ggplot(aes(y = treatment, x = sd, group = evalPeriod, fill = evalPeriod)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 0.8) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 0, color = "darkgrey") +
+  cowplot::theme_minimal_vgrid() 
+  #coord_cartesian(xlim = c(0.85, 1.0), ylim = c(1, 10.5)) 
+plot_sd %>%
+  ggsave(filename = "img/rq/rq4-std.png",
+         height = 5,
+         width = 6)
+
+plot_sd
+```
+
+
+```{r, fig.width = 8, fig.height = 4, include = FALSE}
+library(pBrackets) 
+
+bracketsGrob <- function(...){
+l <- list(...)
+e <- new.env()
+e$l <- l
+  grid:::recordGrob(  {
+    do.call(grid.brackets, l)
+  }, e)
+}
+
+b1 <- bracketsGrob(0.5, 0.05, 0, 0.05, h=0.03, lwd=1, col="black")
+b2 <- bracketsGrob(0.5, 0.05, 1, 0.05, h=0.13, lwd=1, col="black")
+
+rates <- round(seq(0.6,1,0.1)*optimal_expreturn,4)*100
+
+labs_vis = c("Point + Interval","Bar Chart","Interval","Table","HOP + Strip","Dot plot","HOP","Probability Density")
+names(labs_vis) = vis_display_order
+
+stock_labels <- c(20,40,60,80,100)
+#dv_returns[round(dv_returns$dv==0.6,]
+
+last_trial_plots = plot_grid(
+  plot_means +
+    ylab(NULL) +
+    scale_y_discrete(labels = labs_vis) +
+    annotate("text", label = "Myopic loss aversion", x = 0.82, y = 8.75, size = 2.5, color = "black") +
+    annotate("text", label = "Equity premium", x = 0.88, y = 1.45, size = 2.5, color= "black") +
+    annotate("text", label = "Optimal", x = 0.938, y = .6, size = 2.5, color="black") +
+    annotation_custom(b1, xmin = 0.75, xmax = 1.25, ymin = 1.5) +
+    annotation_custom(b2, xmin = 0.73, xmax = 0.92, ymin = 8.4) +
+      annotate("label", label = "1 year", x = 0.72, y = 7.55, size = 2.5, color = "#56B4E9", alpha = 0.8, fontface =2, label.size = 0.5) +
+        annotate("label", label = "30 years", x = 0.95, y = 5.4, size = 2.5, color = "#E69F00", alpha = 0.8, fontface =2, label.size = 0.5) +
+    annotate("segment",  x = 0.973, y = 0.6, xend = 1, yend = 0.6, color = "black", arrow=arrow(length = unit(0.05,"inches"))) +
+    #geom_bracket(xmin = "0.925", xmax = "2.0", y.position = 1.3, label = "Distance B") +
+    xlab("") +
+     scale_x_continuous(breaks = seq(0.6,1,0.1), labels = paste0(stock_labels,"%\n",rates,"%\n",round(seq(0.6,1,0.1),1),"\n",getExpectedInvestment(seq(0.6,1,0.1),50000,optimal_expreturn))) +
+    theme(
+      #plot.tag.position = c(0.05, 0.02),
+      plot.background = element_rect(fill = 'white', color = 'white'),
+      axis.text.x = element_text(size = 7),
+      axis.line.y = element_blank(), 
+      axis.ticks.y = element_blank(),
+      legend.position = "none"),
+  mean_diff +
+    scale_y_discrete(labels = NULL) +
+    ylab(NULL) +
+    xlab("Difference by evaluation period\nMyopic loss aversion") +
+    theme(
+      axis.line.y = element_blank(), 
+      axis.text.x = element_text(size = 8),
+      axis.title.x = element_text(size = 8),
+      axis.ticks.y = element_blank(),
+      plot.background = element_rect(fill = 'white', color = 'white'),
+      #legend.key.size = 8,
+      legend.key.size = unit(0.2, 'cm'),
+      legend.title=element_text(size=8),
+      legend.text=element_text(size=8),
+      legend.position = "none")
+  ,
+  plot_sd +
+    scale_y_discrete(labels = NULL) +
+    ylab(NULL) +
+    xlab("Standard deviation") +
+    annotate("label", label = "30 years", x = 0.05, y = 5.5, size = 2.5, color = "#E69F00", alpha = 0.8, fontface =2, label.size = 0.5) +
+    annotate("label", label = "1 year", x = 0.155, y = 7.46, size = 2.5, color = "#56B4E9", alpha = 0.8, fontface =2, label.size = 0.5) +
+    labs(fill = "Evaluation\nperiod") +
+    #scale_fill_discrete(name = "Evaluation\nperiod") +
+    theme(
+      axis.line.y = element_blank(), 
+      axis.text.x = element_text(size = 8),
+      axis.ticks.y = element_blank(),
+            axis.title.x = element_text(size = 8),
+      #legend.key.size = 8,
+      legend.key.size = unit(0.2, 'cm'),
+      legend.title=element_text(size=8),
+      legend.text=element_text(size=8),
+      legend.position = "none") +
+    theme(
+            plot.background = element_rect(fill = 'white', color = 'white')
+    ), # change to put in key
+  # plot_sd_vs_text + 
+  #   scale_y_discrete(labels = NULL) +
+  #   ylab(NULL) +
+  #   xlab("sd - text sd, last trial") +
+  #   theme(axis.line.y = element_blank(), axis.ticks.y = element_blank()),
+  # plot_sd_vs_dot50 + 
+  #   scale_y_discrete(labels = NULL) +
+  #   ylab(NULL) +
+  #   xlab("sd - dot50 sd, last trial") +
+  #   theme(axis.line.y = element_blank(), axis.ticks.y = element_blank()),
+  align = "h",
+  ncol = 4,
+  rel_widths = c(0.1,2.5,1.25,1.25),
+  axis = "b"
+)
+
+small_label ="Stock allocation decision\nExpected rate of return\nExp. return / optimal return (DV)\nHypothetical value at retirement"
+
+last_trial_plots = 
+  cowplot::ggdraw(last_trial_plots) + draw_label(small_label, x = 0.09, y = 0.136, size = 7)
+
+last_trial_plots
+pdf(file = "img/rq/eval_end_plots.pdf", useDingbats = FALSE, width = 8, height = 4)
+last_trial_plots
+dev.off()
+```
+

@@ -1,0 +1,533 @@
+---
+title: "03-validate-models"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+## Libraries and Data
+
+```{r}
+library(brms)
+library(rstan)
+library(tidyverse)
+library(cowplot)
+library(colorblindr)
+library(ggpubr)
+library(tidybayes)
+library(modelr)
+
+# recommended code to speed up stan
+# see https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+vis_display_order <- c("point","barchart","interval","table","hopsdist","dotplot","hops","density")
+max_eval = 30
+
+rq3 <- read_csv("data/rq3.csv") %>%
+    mutate(
+    eval_period_normalized = ((evalPeriod - max_eval) / max_eval) + 0.5
+  )
+```
+
+```{r fig.width=10,fig.height=4}
+rq3 %>%
+  ggplot(aes(x = evalPeriod, y = dv, color = treatment)) +
+  stat_summary(fun.data = mean_se) +
+  geom_hline(yintercept = 1) +
+  stat_smooth(method = lm) +
+  facet_grid(.~treatment) +
+  theme(legend.position = "none")
+```
+
+### Priors
+
+Commented out.
+
+```{r}
+get_prior(bf(
+    dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+    phi ~ eval_period_normalized * treatment
+  ),
+  data = rq3, family = Beta)
+```
+
+
+```{r}
+pr_beta = c(
+  prior(normal(0, 1), class = b),
+  # these prior intercepts are wide and cover 0 (50% on the logit scale), but
+  # also assume some likely better-than-50% performance on average --- this
+  # was chosen to aid convergence during the pilot, but does not have a strong
+  # impact on final estimates.
+  prior(normal(2, 2), class = Intercept),
+  prior(normal(2, 2), class = Intercept, dpar = phi),
+  prior(normal(0, 1), class = b, dpar = phi),
+  prior(student_t(3, 0, 1), class = sd)
+)
+```
+
+### Fit model
+
+```{r run, eval=FALSE, include=TRUE}
+# save model - core model
+   # dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+   #  phi ~ eval_period_normalized * treatment),
+mbeta = brm(bf(
+    dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+    phi ~ eval_period_normalized * treatment),
+  data = rq3, 
+  prior = pr_beta, 
+  control = list(adapt_delta = 0.9995, max_treedepth = 15, stepsize = 0.005),
+  warmup = warmup, iter = iter, thin = thin,
+  family = Beta
+  )
+
+
+save(mbeta, file = "models/fit1.rda")
+```
+
+```{r run2, eval=FALSE, include=TRUE}
+mbeta2 = brm(bf(
+    dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+    phi ~ eval_period_normalized * treatment),
+  data = rq3, 
+  prior = pr_beta, 
+  control = list(adapt_delta = 0.9995, max_treedepth = 15, stepsize = 0.005),
+  warmup = warmup, iter = iter, thin = thin,
+  family = Beta
+  )   #  phi ~ eval_period_normalized ),
+# challenger: phi eval_period_nor
+save(mbeta2, file = "models/fit2.rda")
+```
+
+
+```{r run3, eval=FALSE, include=TRUE}
+mbeta3 = brm(bf(
+    dv ~ eval_period_normalized + treatment + (1|usertoken), 
+    phi ~ eval_period_normalized),
+  data = rq3, 
+  prior = pr_beta, 
+  control = list(adapt_delta = 0.9995, max_treedepth = 15, stepsize = 0.005),
+  warmup = warmup, iter = iter, thin = thin,
+  family = Beta
+  )   #  phi ~ eval_period_normalized ),
+# challenger: phi eval_period_nor
+save(mbeta3, file = "models/fit3.rda")
+```
+
+
+
+```{r run4, eval=FALSE, include=TRUE}
+# save model - core model
+   # dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+   #  phi ~ eval_period_normalized * treatment),
+mbeta4 = brm(bf(
+    dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+    phi ~ eval_period_normalized * treatment),
+  data = rq3, 
+  #prior = pr_beta, 
+  control = list(adapt_delta = 0.9995, max_treedepth = 15, stepsize = 0.005),
+  warmup = warmup, iter = iter, thin = thin,
+  family = Beta
+  )
+
+
+save(mbeta4, file = "models/fit4.rda")
+```
+
+```{r run5, eval=FALSE, include=TRUE}
+mbeta5 = brm(bf(
+    dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1|usertoken), 
+    phi ~ eval_period_normalized * treatment),
+  data = rq3, 
+  #prior = pr_beta, 
+  control = list(adapt_delta = 0.9995, max_treedepth = 15, stepsize = 0.005),
+  warmup = warmup, iter = iter, thin = thin,
+  family = Beta
+  )   #  phi ~ eval_period_normalized ),
+# challenger: phi eval_period_nor
+save(mbeta5, file = "models/fit5.rda")
+```
+
+
+```{r run6, eval=FALSE, include=TRUE}
+mbeta6 = brm(bf(
+    dv ~ eval_period_normalized + treatment + (1|usertoken), 
+    phi ~ eval_period_normalized),
+  data = rq3, 
+  #prior = pr_beta, 
+  control = list(adapt_delta = 0.9995, max_treedepth = 15, stepsize = 0.005),
+  warmup = warmup, iter = iter, thin = thin,
+  family = Beta
+  )   #  phi ~ eval_period_normalized ),
+# challenger: phi eval_period_nor
+save(mbeta6, file = "models/fit6.rda")
+```
+
+
+
+
+```{r}
+# load model
+load("models/fit1.rda")
+load("models/fit2.rda")
+load("models/fit3.rda")
+load("models/fit4.rda")
+load("models/fit5.rda")
+load("models/fit6.rda")
+```
+
+
+## Model results
+
+```{r}
+summary(mbeta)
+```
+
+```{r}
+summary(mbeta2)
+```
+
+```{r}
+summary(mbeta3)
+```
+
+```{r}
+summary(mbeta4)
+```
+
+```{r}
+summary(mbeta5)
+```
+
+```{r}
+summary(mbeta6)
+```
+
+## PPC across models
+
+```{r}
+pp_check(mbeta)
+```
+
+```{r}
+pp_check(mbeta2)
+```
+
+```{r}
+pp_check(mbeta3)
+```
+
+```{r}
+pp_check(mbeta4)
+```
+
+```{r}
+pp_check(mbeta5)
+```
+```{r}
+pp_check(mbeta6)
+```
+
+## Conditional Effects
+
+```{r}
+conditional_effects(mbeta, "treatment") # conditions = data.frame(size = 1)
+```
+
+
+```{r}
+conditional_effects(mbeta2, "treatment") # conditions = data.frame(size = 1)
+```
+
+```{r}
+conditional_effects(mbeta3, "treatment") # conditions = data.frame(size = 1)
+```
+
+```{r}
+conditional_effects(mbeta4, "treatment") # conditions = data.frame(size = 1)
+```
+
+```{r}
+conditional_effects(mbeta5, "treatment") # conditions = data.frame(size = 1)
+```
+
+```{r}
+conditional_effects(mbeta6, "treatment") # conditions = data.frame(size = 1)
+```
+
+
+
+## Mean PPC
+
+```{r}
+#q75 <- function(y) quantile(y, 0.75)
+pp_check(mbeta, type='stat', stat='mean')
+#+scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30"))
+```
+
+```{r}
+#q75 <- function(y) quantile(y, 0.75)
+pp_check(mbeta2, type='stat', stat='mean')
+#+scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30"))
+```
+
+```{r}
+#q75 <- function(y) quantile(y, 0.75)
+pp_check(mbeta3, type='stat', stat='mean')
+#+scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30"))
+```
+
+```{r}
+#q75 <- function(y) quantile(y, 0.75)
+pp_check(mbeta4, type='stat', stat='mean')
+#+scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30"))
+```
+
+```{r}
+#q75 <- function(y) quantile(y, 0.75)
+pp_check(mbeta5, type='stat', stat='mean')
+#+scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30"))
+```
+
+```{r}
+#q75 <- function(y) quantile(y, 0.75)
+pp_check(mbeta6, type='stat', stat='mean')
+#+scale_x_continuous(breaks = seq(-0.5, 0.5, length.out = 7), labels = c("1", "5","10","15","20","25", "30"))
+```
+
+
+```{r}
+bayesplot::pp_check(mbeta, type = "violin_grouped", group = "treatment")
+```
+
+
+```{r}
+bayesplot::pp_check(mbeta, type = "error_hist")
+```
+
+## Plots
+
+
+```{r}
+eval_period_ends = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = c(-0.467, .5) #c(-0.467, .5)  # because we normalized trial to be from -0.5 to 0.5
+  ) %>%
+  add_fitted_samples(mbeta, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() %>%
+  mutate(treatment = fct_rev(fct_relevel(treatment, vis_display_order))) %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+
+
+#Conditional means (for "average" person on "average" scenario) on last trial:
+eval_period_ends %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"30","1")) %>%
+  mutate(evalPeriod = factor(evalPeriod, levels = c("30","1"))) %>%
+  ggplot(aes(y = treatment, x = mu, group = evalPeriod, fill = evalPeriod)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 1.3) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black") +
+  cowplot::theme_minimal_vgrid()
+```
+
+
+
+
+```{r}
+eval_period_ends2 = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = c(-0.467, .5) #c(-0.467, .5)  # because we normalized trial to be from -0.5 to 0.5
+  ) %>%
+  add_fitted_samples(mbeta2, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() %>%
+  mutate(treatment = fct_rev(fct_relevel(treatment, vis_display_order))) %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+
+
+#Conditional means (for "average" person on "average" scenario) on last trial:
+eval_period_ends2 %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"30","1")) %>%
+  mutate(evalPeriod = factor(evalPeriod, levels = c("30","1"))) %>%
+  ggplot(aes(y = treatment, x = mu, group = evalPeriod, fill = evalPeriod)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 1.3) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black") +
+  cowplot::theme_minimal_vgrid()
+```
+
+
+Notice how when we remove interaction density seems to be significant. This is because we're incorrectly applying the population's evaluation curve.
+
+
+```{r}
+eval_period_ends3 = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = c(-0.467, .5) #c(-0.467, .5)  # because we normalized trial to be from -0.5 to 0.5
+  ) %>%
+  add_fitted_samples(mbeta3, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() %>%
+  mutate(treatment = fct_rev(fct_relevel(treatment, vis_display_order))) %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+
+
+#Conditional means (for "average" person on "average" scenario) on last trial:
+eval_period_ends3 %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"30","1")) %>%
+  mutate(evalPeriod = factor(evalPeriod, levels = c("30","1"))) %>%
+  ggplot(aes(y = treatment, x = mu, group = evalPeriod, fill = evalPeriod)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 1.3) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black") +
+  cowplot::theme_minimal_vgrid()
+```
+
+```{r}
+eval_period_ends4 = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = c(-0.467, .5) #c(-0.467, .5)  # because we normalized trial to be from -0.5 to 0.5
+  ) %>%
+  add_fitted_samples(mbeta4, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() %>%
+  mutate(treatment = fct_rev(fct_relevel(treatment, vis_display_order))) %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+
+
+#Conditional means (for "average" person on "average" scenario) on last trial:
+eval_period_ends4 %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"30","1")) %>%
+  mutate(evalPeriod = factor(evalPeriod, levels = c("30","1"))) %>%
+  ggplot(aes(y = treatment, x = mu, group = evalPeriod, fill = evalPeriod)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 1.3) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black") +
+  cowplot::theme_minimal_vgrid()
+```
+
+
+
+```{r}
+eval_period_ends5 = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = c(-0.467, .5) #c(-0.467, .5)  # because we normalized trial to be from -0.5 to 0.5
+  ) %>%
+  add_fitted_samples(mbeta5, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() %>%
+  mutate(treatment = fct_rev(fct_relevel(treatment, vis_display_order))) %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+
+
+#Conditional means (for "average" person on "average" scenario) on last trial:
+eval_period_ends5 %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"30","1")) %>%
+  mutate(evalPeriod = factor(evalPeriod, levels = c("30","1"))) %>%
+  ggplot(aes(y = treatment, x = mu, group = evalPeriod, fill = evalPeriod)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 1.3) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black") +
+  cowplot::theme_minimal_vgrid()
+```
+
+Again, without interaction we're having issues. 
+
+```{r}
+eval_period_ends6 = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = c(-0.467, .5) #c(-0.467, .5)  # because we normalized trial to be from -0.5 to 0.5
+  ) %>%
+  add_fitted_samples(mbeta6, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() %>%
+  mutate(treatment = fct_rev(fct_relevel(treatment, vis_display_order))) %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+
+
+#Conditional means (for "average" person on "average" scenario) on last trial:
+eval_period_ends6 %>%
+  mutate(evalPeriod = if_else(eval_period_normalized==0.5,"30","1")) %>%
+  mutate(evalPeriod = factor(evalPeriod, levels = c("30","1"))) %>%
+  ggplot(aes(y = treatment, x = mu, group = evalPeriod, fill = evalPeriod)) +
+  geom_halfeyeh(fun.data = median_qih, fatten.point = 1.3) +
+    scale_fill_OkabeIto(alpha = 0.5) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black") +
+  cowplot::theme_minimal_vgrid()
+```
+
+```{r}
+max_eval=30
+
+mu_mean = rq3 %>%
+  mutate(
+    eval_period_normalized = ((evalPeriod - max_eval) / max_eval) + 0.5
+  ) %>%
+  group_by(treatment, eval_period_normalized) %>%
+  summarise(mean=mean(dv))
+```
+
+
+```{r}
+fit_lines6 = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = seq_range(eval_period_normalized, n = 20)
+  ) %>%
+  add_fitted_samples(mbeta6, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup()  %>%
+  mutate(sd = sqrt(mu * (1 - mu) / (1 + phi)))
+
+mu_mean6 = fit_lines6 %>%
+  group_by(treatment, eval_period_normalized) %>%
+  summarise(mu_mean=mean(mu))
+```
+
+```{r}
+fit_lines = rq3 %>%
+  data_grid(
+    treatment,
+    eval_period_normalized = seq_range(eval_period_normalized, n = 20)
+  ) %>%
+  add_fitted_samples(mbeta, re_formula = NA, var = "mu", dpar = TRUE) %>%
+  ungroup() 
+  #mutate(vis = fct_relevel(vis, vis_display_order))
+```
+
+
+As we see here, the model is not doing well. We need the interaction effect.
+
+```{r, fig.height = 3, fig.width = 8}
+scale_fill_fit_lines = scale_fill_manual(
+  values = RColorBrewer::brewer.pal(4, "Greys")[-1], guide = guide_legend(reverse = TRUE)
+)
+fit_lines %>%
+  ggplot(aes(x = eval_period_normalized, y = mu)) +
+  stat_lineribbon(.prob = c(.95, .8, .5)) +
+  geom_hline(yintercept = seq(.7, 1, by=.05), color="gray75", alpha = 0.5) +
+  geom_line(aes(y = mean), data = mu_mean, color = "red", size = 1) +
+  facet_grid(. ~ forcats::fct_relevel(treatment, vis_display_order)) +
+  scale_fill_fit_lines 
+  #fit_line_plot_settings
+```
+
+# This is the actual model
+
+```{r, fig.height = 3, fig.width = 8}
+scale_fill_fit_lines = scale_fill_manual(
+  values = RColorBrewer::brewer.pal(4, "Greys")[-1], guide = guide_legend(reverse = TRUE)
+)
+fit_lines %>%
+  ggplot(aes(x = eval_period_normalized, y = mu)) +
+  stat_lineribbon(.prob = c(.95, .8, .5)) +
+  geom_hline(yintercept = seq(.7, 1, by=.05), color="gray75", alpha = 0.5) +
+  geom_line(aes(y = mean), data = mu_mean, color = "red", size = 1) +
+  facet_grid(. ~ forcats::fct_relevel(treatment, vis_display_order)) +
+  scale_fill_fit_lines 
+  #fit_line_plot_settings
+```

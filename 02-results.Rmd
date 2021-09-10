@@ -1,0 +1,590 @@
+---
+title: "02-experiment-results"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+## Get data
+
+```{r}
+library(tidyverse)
+final_responses <- read_csv("data/final_responses.csv")
+
+# number participants
+nrow(count(final_responses, usertoken))
+
+# number of records: 14 * 198 = 2,772
+nrow(final_responses)
+```
+
+```{r}
+# empty as no na records
+final_responses %>% 
+  select_if(function(x) any(is.na(x))) %>% 
+  summarise_each(funs(sum(is.na(.)))) 
+```
+
+```{r}
+vis_display_order <- c("point","barchart","interval","table","hopsdist","dotplot","hops","density")
+
+names(vis_display_order) <- c("Point +\nInterval","Bar\nChart","Interval","Table","HOPs +\nStrip","Dotplot","HOPs","Probability\nDensity")
+```
+
+```{r}
+incentives <- read_csv("data/incentives.csv") %>%
+  select(usertoken, mturker)
+```
+
+```{r}
+final_responses <- final_responses %>%
+  inner_join(incentives)
+```
+
+
+## rq 1
+
+
+```{r}
+library(ggpubr)
+
+rq1 <- final_responses %>%
+  filter(n_trial < 3)
+
+rq1 %>%
+  mutate(evalPeriod = as.factor(evalPeriod)) %>%
+  ggdensity(x = "stockAllocation",
+          add = "mean", rug = TRUE,
+          color = "evalPeriod", fill = "evalPeriod",
+          palette = c("#00AFBB", "#E7B800")) +
+  xlim(0,100)
+
+rq1 %>%
+  mutate(evalPeriod = as.factor(evalPeriod)) %>%  
+  ggpaired(x = "evalPeriod", y = "stockAllocation",
+         color = "evalPeriod", line.color = "gray", line.size = 0.4,
+         palette = "jco")+
+  stat_compare_means(paired = TRUE) +
+  ylim(0,100) +
+  ggsave("img/rq/rq1.png", width = 4, height = 5)
+```
+
+```{r}
+# see https://stats.stackexchange.com/questions/306841/z-score-on-wilcoxon-signed-ranks-test
+
+source("functions.R")
+
+rq1_wtest <- wilcox.test2(stockAllocation ~ evalPeriod, data = rq1, paired = TRUE)
+
+
+rq1_wtest
+```
+
+```{r}
+print(rq1_wtest$z_val)
+```
+
+```{r}
+table(rq1$stockAllocation,rq1$evalPeriod)
+```
+
+
+
+```{r}
+library(colorblindr)
+library(cowplot)
+  
+## data
+rq1_df_mean <- rq1 %>%  
+  mutate(evalPeriod = factor(evalPeriod, levels = c(30,1))) %>%
+  group_by(evalPeriod) %>%
+  do(data.frame(rbind(Hmisc::smean.cl.boot(.$stockAllocation, conf.int = 0.95))))
+
+median_cl_boot <- function(x, conf = 0.95) {
+  lconf <- (1 - conf)/2
+  uconf <- 1 - lconf
+  require(boot)
+  bmedian <- function(x, ind) median(x[ind])
+  bt <- boot(x, bmedian, 1000)
+  bb <- boot.ci(bt, type = "perc")
+  data.frame(Mean = median(x), Lower = quantile(bt$t, lconf), Upper = quantile(bt$t, 
+                                                                          uconf))
+}
+
+rq1_df_median <- rq1 %>%  
+  mutate(evalPeriod = factor(evalPeriod, levels = c(30,1))) %>%
+  group_by(evalPeriod) %>%
+  do(data.frame(rbind(median_cl_boot(.$stockAllocation))))
+
+rq1_df <- bind_rows(
+  rq1_df_mean %>% mutate(measure = "Mean"),
+  rq1_df_median %>% mutate(measure = "Median")
+) %>%
+  rename(Value = Mean)
+
+bt <- tibble(
+  evalPeriod = c(1,1,30,30),
+  measure = c("Mean","Median","Mean","Median"),
+  Value = c(41,40,82,90),
+  Source = c("Benartzi &\nThaler (1999)","","Benartzi &\nThaler (1999)","")
+) %>%
+  mutate(evalPeriod = factor(evalPeriod))
+
+ggplot(rq1_df, aes(x = measure, y = Value, color = evalPeriod)) +
+  geom_point(size = 4) +
+  geom_point(size = 2, data = bt, shape = 2) +
+  ggrepel::geom_text_repel(data = bt[1,], aes(label = Source),
+                           nudge_x = 0.5, nudge_y = -2, size = 3) +   
+  ggrepel::geom_text_repel(data = bt[3,], aes(label = Source),
+                           nudge_x = 0.75, nudge_y = 3.5, size = 3, segment.colour = "gray") +
+  annotate("segment", x = 1.69, y = 88.5, xend = 1.94, yend = 89.7, color = "gray") +
+  geom_errorbar(aes(ymin = Lower,ymax = Upper), width = 0.5) +
+  scale_color_OkabeIto() +
+
+  theme_bw() +
+  theme_minimal_vgrid() +
+  #facet_grid(. ~ enorm_cut) +
+  coord_flip() +
+  theme(legend.position = "right") +
+  #theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+  #theme(plot.title = element_text(hjust = 0.5)) +
+  labs(
+    x = " ",
+    y = "Stock Allocation",
+    #title = "",#"Ratio Test: Mean Log Absolute Error & 95% Bootstrapped C.I.",
+    #caption = "C.I.'s Bootstrapped on individual level (n = 190)",
+    title = "Median and mean stock allocation for 1 vs 30 year evaluation period",
+    color = "Evaluation\nPeriod in Years"
+  ) +
+  #ylim(2.75,9.25) +
+    scale_y_continuous(breaks = seq(40, 100, 10)) +
+  ggsave(
+    filename = "img/rq/01-rq1-boot.png",
+    height = 2,
+    width = 10
+  )
+
+
+```
+
+
+
+
+```{r}
+
+#b1 <- bracketsGrob(2, 50, 2, 75,lwd=1, col="black")
+
+
+rq2 <- final_responses %>%
+  filter(task == "task1") 
+
+rq2_df_mean <- rq2 %>%  
+  mutate(evalPeriod = factor(evalPeriod)) %>%
+  group_by(evalPeriod) %>%
+  do(data.frame(rbind(Hmisc::smean.cl.boot(.$stockAllocation, conf.int = 0.95))))
+
+bt <- tibble(
+  evalPeriod = c(1,30),
+  #measure = c("Mean","Mean"),
+  Mean = c(41,82),
+  Source = c("Benartzi &\nThaler (1999)","Benartzi &\nThaler (1999)")
+) %>%
+  mutate(evalPeriod = factor(evalPeriod))
+
+rq_df_plot = rq2_df_mean %>%
+  ggplot(aes(x = Mean, y = evalPeriod)) +
+    geom_vline(xintercept=84, linetype="dashed", alpha = 0.8) +
+  geom_vline(xintercept=51.4, linetype="dashed", alpha = 0.8) + 
+    geom_vline(xintercept=82, linetype="dashed", color = "#E69F00", alpha = 0.8) +
+  geom_vline(xintercept=41, linetype="dashed", color = "#E69F00", alpha = 0.8) + 
+  
+  #geom_path(aes(x = x, y = y), data = data.frame(x=c(51.4,84),y=c(0.5,0.5)), alpha = 0.8) +
+  #geom_path(aes(x = x, y = y), data = data.frame(x=c(41,82),y=c(0.75,0.75), fill = "#E69F00", alpha = 0.8)) +
+  geom_point(size = 3) +
+   ggrepel::geom_label_repel(data = bt[1,], aes(x = Mean, y = evalPeriod, label = Source, color = Source), fontface =2, color = "black",
+                           nudge_x = -15, nudge_y = 0.3, size = 3, segment.colour = "gray") +   
+  ggrepel::geom_label_repel(data = bt[2,], aes(x = Mean, y = evalPeriod, label = Source, color = Source), fontface =2,color = "black",
+                           nudge_x = -15, nudge_y = -1, size = 3, segment.colour = "gray") +
+  geom_point(size = 3, data = bt, alpha=0.8, aes(color = Source)) +
+ 
+ # annotate("segment", x = 1.69, y = 88.5, xend = 1.94, yend = 89.7, color = "gray") +
+  geom_errorbar(aes(xmin = Lower,xmax = Upper), width = 0.5) +
+  scale_color_OkabeIto() +
+  
+  # geom_segment(
+  #   aes(x = x1, y = y1, xend = x2, yend = y2),
+  #   color = "black",
+  #   alpha = 0.8,
+  #   data = data.frame(y1 = 1.5, y2 = 1.5, x1 = 51.5, x2 = 83.5),
+  #   arrow = arrow(length = unit(0.03, "npc"), ends = "both")
+  # ) +
+  # 
+  #   geom_segment(
+  #   aes(x = x1, y = y1, xend = x2, yend = y2),
+  #   color = "#E69F00",
+  #   alpha = 0.8,
+  #   data = data.frame(y1 = 0.5, y2 = 0.5, x1 = 41, x2 = 82),
+  #   arrow = arrow(length = unit(0.03, "npc"), ends = "both")
+  # ) +
+annotate("text", fontface =2, x = 70, y = 1, label = "Myopic loss\naversion", color = "black", size = 2.5) +
+  # geom_text(
+  #   data = data.frame(x = 70, y = 1, text = "Myopic loss\naversion")
+  # )+
+  #theme_bw() +
+  #theme_minimal_hgrid() +
+  cowplot::theme_minimal_hgrid() +
+  #facet_grid(. ~ enorm_cut) +
+  coord_flip() +
+  theme(legend.position = "none") +
+  scale_y_discrete(labels = paste0(c(1,5,10,15,20,25,30)," years")) +
+  #theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+  #theme(plot.title = element_text(hjust = 0.5)) +
+  labs(
+    subtitle = "Stock allocation",
+    y = "\nEvaluation period",
+    #title = "",#"Ratio Test: Mean Log Absolute Error & 95% Bootstrapped C.I.",
+    #subtitle = "95% bootstrapped C.I. (n = 198)",
+    #title = "Round 1 (bar chart) mean stock allocation",
+    color = "Evaluation\nPeriod in Years"
+  ) +
+  #ggdist::stat_lineribbon(color="black", alpha = 0.8) +
+  xlim(0,100) +
+  # scale_x_discrete(
+  #   limits = seq(0,100,10)
+  # ) +
+  theme(
+     axis.text.x = element_text(size = 10),
+     plot.title.position = "plot"
+  ) + scale_x_continuous(breaks = seq(0, 100, 10), limits = c(0, 100))
+
+rq_df_plot
+pdf(file = "img/rq/rq_df_plot.pdf", useDingbats = FALSE, width = 6, height = 4)
+rq_df_plot
+dev.off()
+```
+
+
+```{r}
+my_comparisons <- list( c("1", "30"))
+
+rq2 %>%
+  mutate(evalPeriod = as.factor(evalPeriod)) %>%  
+  ggboxplot(x = "evalPeriod", y = "stockAllocation",
+          color = "evalPeriod", palette = "jco")+ 
+  stat_compare_means(paired = TRUE, comparisons = my_comparisons)+ # Add pairwise comparisons p-value
+  stat_compare_means(label.y = 105, label.x = 5) +     # Add global p-value
+  theme(legend.position = "none") +
+  labs(x = "Evaluation Period (Years)",
+       y = "Stock Allocation") +
+  ggsave("img/rq/rq2.png", width = 5, height = 4) 
+```
+
+
+```{r}
+library(glmmTMB)
+
+rq2 <- rq2 %>%
+  mutate(dv = stockAllocation * 0.004933 + 0.501722)
+
+rq2 %>% write_csv("data/rq2.csv")
+
+# library(lme4)
+# 
+# m0 <- lmer(dv ~ s(evalPeriod, 2) + (1 | usertoken), data = rq2, )
+
+m0 <- glmmTMB(dv ~ evalPeriod  + (1 | usertoken), rq2, family=list(family="beta",link="logit"))
+
+summary(m0)
+```
+
+
+
+
+
+### rq3
+
+
+```{r height="10",width="4"}
+max_eval = 30
+
+rq3 <- final_responses %>%
+  filter(task == "task2") %>%
+  mutate(dv = stockAllocation * 0.004933 + 0.501722) %>%
+  mutate(
+    eval_period_normalized = ((evalPeriod - max_eval) / max_eval) + 0.5
+  )
+
+write_csv(rq3, "data/rq3.csv")
+```
+
+```{r}
+m1 <- glmmTMB(dv ~ eval_period_normalized + treatment + (1 | usertoken), rq3, family=list(family="beta",link="logit"))
+
+summary(m1)
+```
+
+```{r}
+library(DHARMa)
+m1_residuals <- simulateResiduals(m1)
+
+plot(m1_residuals)
+```
+
+```{r}
+m2 <- glmmTMB(dv ~ eval_period_normalized + treatment + eval_period_normalized * treatment + (1 | usertoken), rq3, family=list(family="beta",link="logit"))
+
+summary(m2)
+```
+
+
+```{r}
+m2_residuals <- simulateResiduals(m2)
+
+plot(m2_residuals)
+```
+
+
+
+```{r}
+my_comparisons <- list( c("1", "30"))
+
+rq3 %>%
+  filter(evalPeriod %in% c("1","30")) %>%
+  mutate(evalPeriod = as.factor(evalPeriod)) %>%
+  ggpaired(x = "evalPeriod", y = "stockAllocation", group = "treatment",
+              color = "evalPeriod", palette = "jco", 
+              line.color = "gray", line.size = 0.4,
+              facet.by = "treatment", short.panel.labs = FALSE,
+           font.label = list(size = 8, color = "black"),
+           ylab="Stock allocation %", xlab="Evaluation period (in years)") +
+    stat_compare_means(paired = TRUE) +
+  ggsave("img/rq/rq3.png", height = 6, width = 6)
+# Use only p.format as label. Remove method name.
+#p + stat_compare_means(label = "p.format", paired = TRUE)
+```
+
+#figure 7
+
+
+```{r}
+library(colorblindr)
+library(cowplot)
+  
+## data
+rq4_df_mean <- bind_rows(rq2,rq3) %>%  
+    mutate(dv = stockAllocation * 0.004933 + 0.501722) %>%
+  #mutate(evalPeriod = factor(evalPeriod, levels = c(30,1))) %>%
+  group_by(treatment, task) %>%
+  do(data.frame(rbind(Hmisc::smean.cl.boot(.$dv, conf.int = 0.95))))
+
+median_cl_boot <- function(x, conf = 0.95) {
+  lconf <- (1 - conf)/2
+  uconf <- 1 - lconf
+  require(boot)
+  bmedian <- function(x, ind) median(x[ind])
+  bt <- boot(x, bmedian, 1000)
+  bb <- boot.ci(bt, type = "perc")
+  data.frame(Mean = median(x), Lower = quantile(bt$t, lconf), Upper = quantile(bt$t, 
+                                                                          uconf))
+}
+
+# rq4_df_median <- bind_rows(rq2,rq3) %>%  
+#   #mutate(evalPeriod = factor(evalPeriod, levels = c(30,1))) %>%
+#   group_by( treatment, task) %>%
+#   do(data.frame(rbind(median_cl_boot(.$stockAllocation))))
+
+rq4_df <- bind_rows(
+  rq4_df_mean %>% mutate(measure = "Mean")
+  #rq4_df_median %>% mutate(measure = "Median")
+) %>%
+  rename(Value = Mean)
+
+
+ggplot(rq4_df_mean, aes(x = forcats::fct_relevel(treatment,vis_display_order), y = Mean, color = task, group=treatment)) +
+  geom_point(size = 4) +
+  geom_errorbar(aes(ymin = Lower,ymax = Upper), width = 0.5) +
+  scale_color_OkabeIto() +
+  #facet_grid(. ~ task) +
+  #coord_flip() +
+  annotate("label", x = 2.6, y = 0.91, label = "Task 1: Bar Chart Only", color = "#E69F00") +
+  annotate("label", x = 2.4, y = 0.81, label = "Task 2: Vis Treatment", color = "#56B4E9") +  
+  cowplot::theme_minimal_hgrid() +
+    # Custom the Y scales:
+  scale_y_continuous(
+    
+    # Features of the first axis
+    name = "Expected Return / Optimal Return",
+    
+    # Add a second axis and specify its features stockAllocation * 0.004933 + 0.501722
+    sec.axis = sec_axis( trans=~(. - 0.501722) / 0.004933, name="Stock Allocation")
+  ) +
+  #theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+  #theme(plot.title = element_text(hjust = 0.5)) +
+    theme(legend.position = "none") +
+  #geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+  labs(
+    x = " ",
+    y = "Stock Allocation",
+    subtitle = "Mean Values and 95% Bootstrapped C.I. (n = 198)",
+    #caption = "C.I.'s Bootstrapped on individual level (n = 198)",
+    title = "Outcomes by treatments across all evaluation periods",
+    color = " "
+  ) +
+  scale_x_discrete(labels = c("Point +\nInterval","Bar\nChart","Interval","Table","Hops +\n Strip","Dotplot","Hops","Probability\nDensity")) +
+  #ylim(2.75,9.25) +
+  ggsave(
+    filename = "img/rq/04-rq4-boot.png",
+    height = 4,
+    width = 8
+  )
+
+
+```
+
+```{r}
+library(colorblindr)
+library(cowplot)
+  
+## data
+rq4_df_mean <- bind_rows(rq2,rq3) %>%  
+      mutate(dv = stockAllocation * 0.004933 + 0.501722) %>%
+  #mutate(evalPeriod = factor(evalPeriod, levels = c(30,1))) %>%
+  group_by(treatment, task, evalPeriod) %>%
+  do(data.frame(rbind(Hmisc::smean.cl.boot(.$dv, conf.int = 0.95))))
+
+
+labs_vis = c("Point + Interval","Bar Chart","Interval","Table","HOP + Strip","Dot plot","HOP","Probability Density")
+names(labs_vis) = vis_display_order
+
+# rq4_df <- bind_rows(
+#   rq4_df_mean %>% mutate(measure = "Mean"),
+#   rq4_df_median %>% mutate(measure = "Median")
+# ) %>%
+#   rename(Value = Mean)
+figure7 <- rq4_df_mean %>%
+  mutate(treatment = factor(treatment, levels = vis_display_order)) %>%
+  ggplot(aes(x = evalPeriod, y = Mean, color = task, group=treatment)) +
+  geom_point(size = 2, position=position_dodge(width = 0.5)) +
+  geom_line(size = 1, aes(group = task)) +
+  geom_errorbar(aes(ymin = Lower,ymax = Upper), width = 0.5, 
+                position="dodge") +
+  #scale_color_OkabeIto() +
+  facet_wrap(. ~ treatment, labeller = labeller(treatment = labs_vis)) +
+  #coord_flip() +
+  #annotate("label", x = 2.6, y = 0.91, label = "Task 1: Bar Chart Only", color = "#E69F00") +
+  #annotate("label", x = 2.4, y = 0.81, label = "Task 2: Vis Treatment", color = "#56B4E9") +  
+  cowplot::theme_minimal_hgrid() +
+    # Custom the Y scales:
+  scale_y_continuous(
+
+    # Features of the first axis
+    name = "Expected Return / Optimal Return",
+
+    # Add a second axis and specify its features stockAllocation * 0.004933 + 0.501722
+    sec.axis = sec_axis( trans=~(. - 0.501722) / 0.004933, name="Stock Allocation")
+  ) +
+  #theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+  #theme(plot.title = element_text(hjust = 0.5)) +
+    theme(legend.position = c(0.77,0.1), 
+          axis.text=element_text(size=12),
+          axis.text.x =element_text(size = 10),
+          axis.text.y = element_text(size = 10),
+        axis.title=element_text(size=10,face="bold"),
+          text = element_text(size = 10)) +
+  scale_x_continuous( breaks = c(1,5,10,15,20,25,30)) +
+  #scale_color_discrete() +
+    scale_color_OkabeIto(order = c(6,5),
+                         alpha = 0.6,
+      name = "Round", labels = c("Round 1: Bar Chart", "Round 2: Vis Treatment")) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+  labs(
+    x = "Evaluation period (in years)",
+    y = "Stock Allocation",
+    #subtitle = "Mean Values and 95% Bootstrapped C.I. (n = 198)",
+    #caption = "C.I.'s Bootstrapped on individual level (n = 198)",
+    #title = "Outcomes by treatments across evaluation periods",
+    color = " "
+  ) 
+  #scale_x_discrete(labels = c("Point +\nInterval","Bar\nChart","Interval","Table","Hops +\n Strip","Dotplot","Hops","Probability\nDensity")) +
+  #ylim(2.75,9.25) +
+  
+figure7
+pdf(file = "img/rq/figure7.pdf", useDingbats = FALSE, width = 8, height = 5)
+figure7
+dev.off()
+```
+
+```{r}
+comparison <- final_responses %>%
+  mutate(dv = stockAllocation * 0.004933 + 0.501722) %>%
+  select(treatment, evalPeriod, task, usertoken, dv) %>%
+  spread("task","dv") %>%
+  mutate(net = round(task2 - task1, 3)) %>%
+  write_csv("data/net.csv")
+```
+
+```{r}
+library(ggridges)
+
+comparison %>%
+  ggplot(aes(x = net, y = forcats::fct_relevel(treatment, vis_display_order), fill = 0.5 - abs(0.5 - stat(ecdf)))) +
+  stat_density_ridges(geom = "density_ridges_gradient", calc_ecdf = TRUE) +
+    scale_y_discrete(labels = c("Point +\nInterval","Bar Chart","Interval","Table","Hops +\nStrip","Dotplot","Hops","Probability\nDensity")) +
+  scale_fill_viridis_c(name = "", direction = -1, alpha = 0.4) +
+  cowplot::theme_minimal_vgrid() +
+  labs(y = " ", title = "Empirical cumulative density function",
+       x = "Net difference of round 2 - round 1:\nExpected return / optimal") +
+  ggsave(filename = "img/ecdf.png", height = 6, width = 6)
+```
+
+
+### check for different turks
+
+```{r}
+
+mt_df <- final_responses %>%
+  filter(task == "task1") %>%  
+  mutate(evalPeriod = factor(evalPeriod)) %>%
+  group_by(evalPeriod, mturker) %>%
+  do(data.frame(rbind(Hmisc::smean.cl.boot(.$stockAllocation, conf.int = 0.95))))
+
+
+mt_df %>%
+  ggplot(aes(x = Mean, y = evalPeriod, color = mturker)) +
+  
+  
+  #geom_path(aes(x = x, y = y), data = data.frame(x=c(51.4,84),y=c(0.5,0.5)), alpha = 0.8) +
+  #geom_path(aes(x = x, y = y), data = data.frame(x=c(41,82),y=c(0.75,0.75), fill = "#E69F00", alpha = 0.8)) +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) +
+ 
+ # annotate("segment", x = 1.69, y = 88.5, xend = 1.94, yend = 89.7, color = "gray") +
+  geom_errorbar(aes(xmin = Lower,xmax = Upper), width = 0.5, position = "dodge") +
+  scale_color_OkabeIto() +
+  cowplot::theme_minimal_hgrid() +
+  #facet_grid(mturker ~ .) +
+  coord_flip() +
+  theme(legend.position = c(0.8,0.2)) +
+  scale_y_discrete(labels = paste0(c(1,5,10,15,20,25,30)," years")) +
+  #theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+  #theme(plot.title = element_text(hjust = 0.5)) +
+  labs(
+    subtitle = "Stock allocation",
+    y = "\nEvaluation period",
+    #title = "",#"Ratio Test: Mean Log Absolute Error & 95% Bootstrapped C.I.",
+    #subtitle = "95% bootstrapped C.I. (n = 198)",
+    #title = "Round 1 (bar chart) mean stock allocation",
+    color = "Evaluation\nPeriod in Years"
+  ) +
+  #ggdist::stat_lineribbon(color="black", alpha = 0.8) +
+  xlim(0,100) +
+  # scale_x_discrete(
+  #   limits = seq(0,100,10)
+  # ) +
+  theme(
+     axis.text.x = element_text(size = 10),
+     plot.title.position = "plot"
+  ) + scale_x_continuous(breaks = seq(0, 100, 10), limits = c(0, 100))
+```
+

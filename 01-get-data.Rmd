@@ -1,0 +1,333 @@
+---
+title: "01-get-data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+## Get data
+
+```{r data, echo=FALSE}
+library(mongolite) 
+library(tidyverse)
+library(knitr)
+
+url = "mongodb+srv://admin-user:equitypremium@cluster0.egedp.mongodb.net"
+mongo<- mongo(collection = "final_study1_mturk_03212021", db = "%3Cdbname%3E", url = url, verbose = TRUE)
+
+## get data
+
+all <- mongo$find()
+
+users <- mongo$find(
+  fields = '{"usertoken": 1, 
+             "treatment": 1, 
+             "startTime": 1,
+             "endTime": 1,
+             "learning1": 1,
+             "mid1": 1,
+             "mid2": 1,
+             "prequestionnaire": 1, 
+             "postquestionnaire": 1,
+             "incentives": 1}'
+  )
+```
+
+
+### responses
+
+```{r}
+
+responses <- mongo$find(
+  fields = '{"usertoken": 1,
+             "treatment": 1,
+             "responses": 1}'
+)
+
+tt <- all$responses %>%
+  flatten() %>% 
+  bind_rows(.id = "trial") %>%
+  mutate(stockAllocation = if_else(left == "stocks",allocationLeft, allocationRight)) %>%
+  mutate(time = anytime::anytime(time/1000)) %>%
+  mutate(n_trial = if_else(task == "task1", as.integer(trial)+1, as.integer(trial)+8)) %>%
+  filter(trial < 7)
+
+print(paste0("Number of unique users ",length(unique(all$usertoken))))
+
+# check if unique users equal row count of 14 * usercount
+assertthat::are_equal(length(unique(all$usertoken))*14,nrow(tt))
+
+tt$usertoken <- rep(all$usertoken, 7)
+tt$treatment <- rep(all$treatment, 7)
+```
+
+```{r}
+### qualitative
+qual_check <- data.frame(usertoken = users$usertoken,
+                   treatment = users$treatment,
+                   qual_check = users$postquestionnaire$explanation)
+
+qual_check %>%
+  write_csv("data/qual_check.csv")
+
+# qualitative analysis
+bad_responses <- c("GisMUsS6","bYcR1XqU","jqDGyqFA","ktqGna4r","sBLPyJei","nKQGzROw","bMPnLH7L","yKdzmCxk","MauVyE74","s9pJQQwm","PYd9Vzqk","1H80Gze1","75mvuvbf","uPjkpdoS","ENx7yNOR","2GTveeV1","jFlNMo3V","jhGpVcnS","kLGIQdrz","JsPdjZKq","JMDomgiz")
+
+qual_check %>% filter(usertoken %in% bad_responses) %>% write_csv("data/qual_check_bad_responses.csv")
+
+length(bad_responses)
+```
+
+## Run exclusions
+
+
+
+### time
+
+
+```{r}
+users %>%
+    mutate(sessionMin = round(difftime(endTime, startTime),2)) %>%
+  select(usertoken, sessionMin) %>%
+  arrange(desc(sessionMin)) %>%
+  ggplot(aes(x = sessionMin)) +
+  ggdist::geom_dots()
+
+users %>%
+    mutate(sessionMin = round(difftime(endTime, startTime),2)) %>%
+  summarise(mean=mean(sessionMin,na.rm=TRUE))
+```
+
+
+### Exclusions
+
+Participants with less than 3 minutes exclusion:
+
+```{r}
+lowTimeExclusion <- users %>%
+    mutate(sessionMin = round(difftime(endTime, startTime),2)) %>%
+  select(usertoken, sessionMin) %>%
+  arrange(desc(sessionMin)) %>%
+  filter(sessionMin < 3) %>%
+  select(usertoken, sessionMin)
+
+lowTimeExclusion
+```
+
+
+Participants with more than 45 minutes exclusion:
+
+```{r}
+highTimeExclusion <- users %>%
+    mutate(sessionMin = round(difftime(endTime, startTime),2)) %>%
+  select(usertoken, sessionMin) %>%
+  arrange(desc(sessionMin)) %>%
+  filter(sessionMin > 45) %>%
+  select(usertoken, sessionMin)
+
+highTimeExclusion
+```
+
+Check if participant had same answer for either left or right allocation for either task 1 or task 2.
+
+```{r}
+dup_responses <- tt %>%
+  group_by(usertoken, task, treatment) %>%
+  summarise(
+    left_sd = sd(allocationLeft),
+    right_sd = sd(allocationRight)
+  ) %>%
+  arrange(left_sd)
+
+head(dup_responses,n=20)
+```
+
+```{r}
+dupExclusion <- dup_responses %>%
+  filter(left_sd == 0)
+
+dupExclusion
+```
+
+## apply exclusions
+
+```{r}
+length(bad_responses)
+```
+
+
+
+```{r}
+backwards <- c("jFlNMo3V","5228J8Ws")
+
+exclusionList <- c(lowTimeExclusion$usertoken, highTimeExclusion$usertoken, dupExclusion$usertoken, backwards, bad_responses)
+
+length(unique(exclusionList))
+
+```
+
+
+
+
+
+```{r}
+### check treatment
+library(tidyverse)
+
+treatment_df <-  users %>%
+  select(usertoken, treatment, startTime) %>%
+  filter(!(usertoken %in% exclusionList))
+
+treatment_df %>%
+  group_by(treatment) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n)) %>%
+  arrange(desc(freq)) %>%
+  kable()
+```
+
+
+```{r}
+### remove for downstreamt
+
+users <- users %>%
+  filter(!(usertoken %in% exclusionList))
+```
+
+
+### pre-questionnaire
+
+```{r}
+# view mankiw, 1991
+mankiw <- data.frame(usertoken = users$usertoken, 
+           data.frame(users$prequestionnaire$MankiwZeldes1991)) %>%
+  drop_na()
+
+mankiw_order <- c("crra_75k","crra1","crra2","crra5","crra10","crra30","crra_50k")
+
+mankiw_tidy <- mankiw %>%
+  gather("key", "value", -usertoken) %>%
+  filter(!is.na(value)) 
+  #mutate(key = forcats::fct_reorder(key, mankiw_order))
+
+x_labels = c("0","1", "2", "5","10","30","inf")
+
+mankiw_tidy %>%
+  count(key, value) %>%
+  mutate(key = forcats::fct_relevel(key, mankiw_order)) %>%
+  ggplot(aes(x = key, y = n, fill = value)) + 
+  geom_col(alpha = 0.7) +
+  #scale_fill_discrete(name = "Investment", labels = c("A", "B")) +
+  colorblindr::scale_fill_OkabeIto(name = "Investment", labels = c("Chance", "Certainty")) +
+  cowplot::theme_minimal_hgrid() +
+  labs(x = "Risk Neutral         --->        Risk Averse          --->         Very Risk Averse",
+       y = "Participant Count",
+       title = "Participant Constant Relative Risk Aversion (CRRA)") +
+  theme(legend.position = "top") #+
+  #ggsave("img/preq/mankiw.png")
+```
+
+```{r}
+# view samuelson
+samuelson <- data.frame(usertoken = users$usertoken,
+                        q1 = users$prequestionnaire$Samuelson_Classic1,
+                        q100 = users$prequestionnaire$Samuelson_Classic100)
+
+samuelson %>%
+  count(q1,q100) %>%
+  kable()
+```
+
+```{r}
+# view prospect theory
+prospect <- data.frame(usertoken = users$usertoken,
+                        qLoss = users$prequestionnaire$Kahneman_1979_Loss,
+                        qGain = users$prequestionnaire$Kahneman_1979_Gain)
+
+prospect %>%
+  count(qLoss,qGain) %>%
+  kable()
+```
+
+
+
+
+```{r}
+library(readr)
+incentives <- read_csv("data/incentives.csv")
+
+mean(incentives$total_incentives)
+```
+
+
+
+### post-questionnaire
+
+```{r}
+postq <- data.frame(usertoken = users$usertoken,
+                    treatment = users$treatment,
+                    data.frame(users$postquestionnaire))
+
+mean(postq$age)
+```
+
+```{r}
+postq %>% 
+  select(satisfaction, suggestions) %>%
+  write_csv("data/suggestions.csv")
+```
+
+```{r}
+table(postq$gender)
+```
+
+```{r}
+table(postq$education)
+```
+
+```{r}
+table(postq$retirement) / nrow(postq)
+```
+
+
+```{r}
+54 / nrow(postq)
+```
+
+```{r}
+users %>%
+    mutate(sessionMin = round(difftime(endTime, startTime),2)) %>%
+  select(usertoken, sessionMin) %>%
+  arrange(desc(sessionMin)) %>%
+  ggplot(aes(x = sessionMin)) +
+  ggdist::geom_dots()
+
+users %>%
+    mutate(sessionMin = round(difftime(endTime, startTime),2)) %>%
+  summarise(mean=mean(sessionMin,na.rm=TRUE)) %>%
+  kable()
+```
+
+```{r}
+final_responses <- tt %>%
+  filter(!(usertoken %in% exclusionList))
+
+write_csv(final_responses, "data/final_responses.csv")
+```
+
+```{r}
+### qualitative
+qual <- data.frame(usertoken = users$usertoken,
+                   treatment = users$treatment,
+                   mid1 = users$mid1$Mid1,
+                   mid2 = users$mid2$Mid2)
+
+qual %>%
+  write_csv("data/feedback.csv")
+```
+
+
+```{r}
+mongo$disconnect()
+```
