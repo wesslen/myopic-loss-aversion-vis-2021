@@ -1,5 +1,5 @@
 ## Use a tag instead of "latest" for reproducibility
-FROM rocker/binder:4.1.1
+FROM rocker/binder:3.6.3
 
 ## Declares build arguments
 ARG NB_USER
