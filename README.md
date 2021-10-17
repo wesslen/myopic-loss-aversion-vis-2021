@@ -6,4 +6,9 @@ The experiment design folder outlines study wire frame and instructions for roun
 
 The experiment-reactjs-app folder provides code for experiment react.js app. This folder is already provided as a public github repository per the authors' github accounts.
 
-[![Launch binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/wesslen/myopic-loss-aversion-vis-2021/HEAD?urlpath=rstudio)
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#github.com/wesslen/myopic-loss-aversion-vis-2021/)
+
+Deployed Heroku app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
+
+
+#[![Launch binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/wesslen/myopic-loss-aversion-vis-2021/HEAD?urlpath=rstudio)
