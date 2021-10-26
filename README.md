@@ -10,6 +10,9 @@
 ┣━━ run-incentives.R            - code to run incentives
 ┣━━ 🖥 experiment-reactjs-app
     ┣━━ server.js               - experiment study server file
+┣━━ 🖥 qualitative study
+    ┣━━ feedback.csv            - user feedback data
+    ┣━━ topicModeling.ipynb     - user feedback topic modeling
 ┣━━ 📐 experiment-design
     ┣━━ experiment-wireframe-retirement.docx - experiment wireframe
     ┣━━ Task2-Instructions.docx - Task 2 unique instructions per treatment
