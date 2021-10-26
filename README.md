@@ -22,7 +22,9 @@
     ┗━━ final_responses.csv     - experiment responses
 ```
 
-![favicon-32x32](https://github.com/heroku/favicon/raw/master/favicon.iconset/icon_32x32.png) Experiment app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
+Paper (preprint): [Effect of uncertainty visualizations on myopic loss aversion and the equity premium puzzle in retirement investment decisions](https://arxiv.org/abs/2107.02334)
+
+![favicon-16x16](https://github.com/heroku/favicon/raw/master/favicon.iconset/icon_16x16.png) Experiment app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
 
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#github.com/wesslen/myopic-loss-aversion-vis-2021/)
 
