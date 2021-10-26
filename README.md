@@ -7,10 +7,10 @@
 ┣━━ 04-analyze-modeling.Rmd     - analyze model
 ┣━━ install.R                   - install R packages
 ┣━━ run-incentives.R            - code to run incentives
-┣━━ 🖥 experiment-reactjs-app   
-┃   ┣━━ server.js               - experiment study server file                                        
+┣━━ 🖥 experiment-reactjs-app
+┃   ┣━━ server.js               - experiment study server file
 ┣━━ 📐 experiment-design
-┃   ┣━━ experiment-wireframe-retirement.docx - experiment wireframe  
+┃   ┣━━ experiment-wireframe-retirement.docx - experiment wireframe
 ┃   ┣━━ Task2-Instructions.docx - Task 2 unique instructions per treatment
 ┣━━ 📈 models
 ┃   ┣━━ fit1-6.rda              - models considered and evaluated
