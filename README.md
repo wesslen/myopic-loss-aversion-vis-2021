@@ -1,3 +1,4 @@
+```
 📦 myopic-loss-aversion-vis-2021                                                                       
 ┣━━ 00-design-space.R           - exploration for design space of possible vis treatments                                                    
 ┣━━ 01-get-data.Rmd             - fetch data from MongoDB for analysis                                          
@@ -16,6 +17,7 @@
 ┃   ┣━━ fit1-6.rda              - models considered and evaluated
 ┣━━ 👨‍💻 data
 ┃   ┣━━ final_responses.csv     - experiment responses
+```
 
 Experiment Heroku app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
 
