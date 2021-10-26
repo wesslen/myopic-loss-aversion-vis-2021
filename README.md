@@ -8,18 +8,18 @@
 ┣━━ 04-analyze-modeling.Rmd     - analyze model
 ┣━━ install.R                   - install R packages
 ┣━━ run-incentives.R            - code to run incentives
-┣━━ 🖥 experiment-reactjs-app
-    ┣━━ server.js               - experiment study server file
-┣━━ 💬 qualitative study
+┗━━ 🖥 experiment-reactjs-app
+    ┗━━ server.js               - experiment study server file
+┗━━ 💬 qualitative study
     ┣━━ feedback.csv            - user feedback data
-    ┣━━ topicModeling.ipynb     - user feedback topic modeling
-┣━━ 📐 experiment-design
+    ┗━━ topicModeling.ipynb     - user feedback topic modeling
+┗━━ 📐 experiment-design
     ┣━━ experiment-wireframe-retirement.docx - experiment wireframe
-    ┣━━ Task2-Instructions.docx - Task 2 unique instructions per treatment
-┣━━ 📈 models
-    ┣━━ fit1-6.rda              - models considered and evaluated
-┣━━ 👨‍💻 data
-    ┣━━ final_responses.csv     - experiment responses
+    ┗━━ Task2-Instructions.docx - Task 2 unique instructions per treatment
+┗━━ 📈 models
+    ┗━━ fit1-6.rda              - models considered and evaluated
+┗━━ 👨‍💻 data
+    ┗━━ final_responses.csv     - experiment responses
 ```
 
 ![favicon-32x32](https://github.com/heroku/favicon/raw/master/favicon.iconset/icon_32x32.png) Experiment app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
