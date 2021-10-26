@@ -1,14 +1,24 @@
-.Rmd files outline workflow from exploration (00-design-space.R) to acquiring data (01-get-data.Rmd / 01-simulated-returns.html) to non-model results (02-results.Rmd) to validating models (03-validate-models.Rmd) to analyzing the selected model (04-analyze-modeling.Rmd).
+📦 myopic-loss-aversion-vis-2021                                                                       
+┣━━ 00-design-space.R           - exploration for design space of possible vis treatments                                                    
+┣━━ 01-get-data.Rmd             - fetch data from MongoDB for analysis                                          
+┣━━ 01-simulated-returns.R/Rmd  - simulate returns used in the study
+┣━━ 02-results.Rmd              - analyze experiment (non-model) results
+┣━━ 03-validate-models.Rmd      - fit and validate/criticize models
+┣━━ 04-analyze-modeling.Rmd     - analyze model
+┣━━ install.R                   - install R packages
+┣━━ run-incentives.R            - code to run incentives
+┣━━ 🖥 experiment-reactjs-app   
+┃   ┣━━ server.js               - experiment study server file                                        
+┣━━ 📐 experiment-design
+┃   ┣━━ experiment-wireframe-retirement.docx - experiment wireframe  
+┃   ┣━━ Task2-Instructions.docx - Task 2 unique instructions per treatment
+┣━━ 📈 models
+┃   ┣━━ fit1-6.rda              - models considered and evaluated
+┣━━ 👨‍💻 data
+┃   ┣━━ final_responses.csv     - experiment responses
 
-The qualitative study folder includes .ipynb notebook for running qualitative analysis.
-
-The experiment design folder outlines study wire frame and instructions for round 2. (Note: includes screen shot of consent that provide authors names per IRB instructions)
-
-The experiment-reactjs-app folder provides code for experiment react.js app. This folder is already provided as a public github repository per the authors' github accounts.
+Experiment Heroku app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
 
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#github.com/wesslen/myopic-loss-aversion-vis-2021/)
-
-Deployed Heroku app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
-
 
 #[![Launch binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/wesslen/myopic-loss-aversion-vis-2021/HEAD?urlpath=rstudio)
