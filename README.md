@@ -19,7 +19,7 @@
     ┣━━ final_responses.csv     - experiment responses
 ```
 
-Experiment Heroku app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
+![favicon-32x32](https://github.com/heroku/favicon/raw/master/favicon.iconset/icon_32x32.png) Experiment app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
 
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#github.com/wesslen/myopic-loss-aversion-vis-2021/)
 
