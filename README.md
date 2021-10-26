@@ -9,18 +9,18 @@
 ┣━━ install.R                   - install R packages
 ┣━━ run-incentives.R            - code to run incentives
 ┣━━ 🖥 experiment-reactjs-app
-┃   ┣━━ server.js               - experiment study server file
+    ┣━━ server.js               - experiment study server file
 ┣━━ 📐 experiment-design
-┃   ┣━━ experiment-wireframe-retirement.docx - experiment wireframe
-┃   ┣━━ Task2-Instructions.docx - Task 2 unique instructions per treatment
+    ┣━━ experiment-wireframe-retirement.docx - experiment wireframe
+    ┣━━ Task2-Instructions.docx - Task 2 unique instructions per treatment
 ┣━━ 📈 models
-┃   ┣━━ fit1-6.rda              - models considered and evaluated
+    ┣━━ fit1-6.rda              - models considered and evaluated
 ┣━━ 👨‍💻 data
-┃   ┣━━ final_responses.csv     - experiment responses
+    ┣━━ final_responses.csv     - experiment responses
 ```
 
 Experiment Heroku app: [https://retirement-study-1.herokuapp.com](https://retirement-study-1.herokuapp.com)
 
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#github.com/wesslen/myopic-loss-aversion-vis-2021/)
 
-#[![Launch binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/wesslen/myopic-loss-aversion-vis-2021/HEAD?urlpath=rstudio)
+[![Launch binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/wesslen/myopic-loss-aversion-vis-2021/HEAD?urlpath=rstudio)
